@@ -31,6 +31,7 @@ export function FleetTable({ trucks }: { trucks: TruckRecord[] }) {
             <th className="px-4 py-3 font-medium">Tracker ID</th>
             <th className="px-4 py-3 font-medium">Status</th>
             <th className="px-4 py-3 font-medium">Raw status text</th>
+            <th className="px-4 py-3 font-medium">Location</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-white/5">
@@ -56,10 +57,13 @@ export function FleetTable({ trucks }: { trucks: TruckRecord[] }) {
                   <td className="px-4 py-3 text-gray-300">
                     {truck.ststr ?? "—"}
                   </td>
+                  <td className="max-w-xs truncate px-4 py-3 text-gray-300" title={truck.address ?? undefined}>
+                    {truck.address ?? "—"}
+                  </td>
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan={4} className="bg-black/20 px-4 py-3">
+                    <td colSpan={5} className="bg-black/20 px-4 py-3">
                       <pre className="max-w-full overflow-x-auto text-xs text-gray-400">
                         {JSON.stringify(truck, null, 2)}
                       </pre>

@@ -48,3 +48,6 @@ export function getStatusInfo(truck: TruckRecord): StatusInfo {
   if (truck.st === "off") return OFFLINE;
   return UNKNOWN;
 }
+
+// Display order requested for the dashboard: stopped, engine idle, moving, offline.
+export const BUCKET_ORDER = ["stopped", "idle", "moving", "offline", "unknown"];

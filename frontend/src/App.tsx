@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useFleetData } from "./hooks/useFleetData";
 import { FleetTable } from "./components/FleetTable";
-import { getStatusInfo } from "./lib/statusMap";
+import { getStatusInfo, BUCKET_ORDER } from "./lib/statusMap";
 import { formatRelativeTime, minutesSince } from "./lib/time";
 
 const STALE_THRESHOLD_MINUTES = 15;
@@ -19,19 +19,27 @@ function App() {
       const info = getStatusInfo(truck);
       seen.set(info.bucket, info.label);
     }
-    return Array.from(seen.entries());
+    return Array.from(seen.entries()).sort(
+      (a, b) => BUCKET_ORDER.indexOf(a[0]) - BUCKET_ORDER.indexOf(b[0]),
+    );
   }, [trucks]);
 
   const filteredTrucks = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return trucks.filter((truck) => {
-      if (bucket !== "all" && getStatusInfo(truck).bucket !== bucket) return false;
-      if (!term) return true;
-      return (
-        truck.name?.toLowerCase().includes(term) ||
-        truck.tracker_id.toLowerCase().includes(term)
+    return trucks
+      .filter((truck) => {
+        if (bucket !== "all" && getStatusInfo(truck).bucket !== bucket) return false;
+        if (!term) return true;
+        return (
+          truck.name?.toLowerCase().includes(term) ||
+          truck.tracker_id.toLowerCase().includes(term)
+        );
+      })
+      .sort(
+        (a, b) =>
+          BUCKET_ORDER.indexOf(getStatusInfo(a).bucket) -
+          BUCKET_ORDER.indexOf(getStatusInfo(b).bucket),
       );
-    });
   }, [trucks, search, bucket]);
 
   const isStale = snapshot ? minutesSince(snapshot.fetched_at) > STALE_THRESHOLD_MINUTES : false;

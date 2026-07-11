@@ -1,9 +1,12 @@
 """Scrapes fleet status from track.ontrackk.com and writes a snapshot to disk.
 
 Logs in with Playwright, captures the JSON response from the site's internal
-/func/fn_objects.php endpoint (fired after login), and writes every tracker's
-full raw record to an output JSON file. Exits non-zero and writes nothing if
-the scrape fails, so a bad run never clobbers the last known-good snapshot.
+/func/fn_objects.php endpoint (fired after login), reverse-geocodes each
+truck's last known position via the site's own tools/gc_post.php endpoint
+(the same call the site's UI makes when you click a truck on the map), and
+writes every tracker's full raw record plus its address to an output JSON
+file. Exits non-zero and writes nothing if the scrape fails, so a bad run
+never clobbers the last known-good snapshot.
 """
 
 import json
@@ -19,6 +22,12 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 LOGIN_URL = "https://track.ontrackk.com/index.php"
 TARGET_ENDPOINT = "/func/fn_objects.php"
+GEOCODE_URL = "https://track.ontrackk.com/tools/gc_post.php"
+GEOCODE_HEADERS = {
+    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "x-requested-with": "XMLHttpRequest",
+    "referer": "https://track.ontrackk.com/tracking.php",
+}
 RESPONSE_TIMEOUT_MS = 30_000
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -62,17 +71,40 @@ def fetch_fleet_data(username: str, password: str) -> dict:
             ) as response_info:
                 page.get_by_role("button", name="Login").click()
 
-            return response_info.value.json()
+            raw_data = response_info.value.json()
+            addresses = fetch_addresses(context, raw_data)
+            return raw_data, addresses
         finally:
             browser.close()
 
 
-def build_snapshot(raw_data: dict, truck_mapping: dict) -> dict:
+def fetch_addresses(context, raw_data: dict) -> dict:
+    addresses = {}
+    for tracker_id, tracker_info in raw_data.items():
+        positions = tracker_info.get("d")
+        if not positions:
+            continue
+        lat, lng = positions[0][2], positions[0][3]
+        try:
+            resp = context.request.post(
+                GEOCODE_URL,
+                headers=GEOCODE_HEADERS,
+                form={"cmd": "latlng", "lat": lat, "lng": lng},
+            )
+            if resp.status == 200:
+                addresses[tracker_id] = resp.json()
+        except Exception as e:
+            print(f"WARNING: geocode failed for {tracker_id}: {e}", file=sys.stderr)
+    return addresses
+
+
+def build_snapshot(raw_data: dict, truck_mapping: dict, addresses: dict) -> dict:
     trucks = []
     for tracker_id, tracker_info in raw_data.items():
         record = dict(tracker_info)
         record["tracker_id"] = tracker_id
         record["name"] = truck_mapping.get(tracker_id)
+        record["address"] = addresses.get(tracker_id)
         trucks.append(record)
 
     return {
@@ -98,7 +130,7 @@ def main() -> int:
     truck_mapping = load_truck_mapping()
 
     try:
-        raw_data = fetch_fleet_data(username, password)
+        raw_data, addresses = fetch_fleet_data(username, password)
     except Exception as e:
         print(f"ERROR: scrape failed: {e}", file=sys.stderr)
         return 1
@@ -107,7 +139,7 @@ def main() -> int:
         print("ERROR: no fleet data captured", file=sys.stderr)
         return 1
 
-    snapshot = build_snapshot(raw_data, truck_mapping)
+    snapshot = build_snapshot(raw_data, truck_mapping, addresses)
     write_snapshot(snapshot, OUTPUT_PATH)
     print(f"Wrote {len(snapshot['trucks'])} truck records to {OUTPUT_PATH}")
     return 0
