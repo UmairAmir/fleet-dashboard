@@ -45,26 +45,30 @@ Rigor/
 
 ## What's done
 
-- Scraper refactored from the user's original working reference script: reads `TRACK_USERNAME`/`TRACK_PASSWORD` from env vars (never hardcoded), uses `page.expect_response` instead of a fixed sleep, captures the **full raw record** for every truck (not just a stopped/idle summary like the original), and fails loudly (non-zero exit, no file written) rather than overwriting good data with a broken scrape.
-- GitHub Actions workflow written and its mechanics verified logically (cron syntax, concurrency guard, force-push-to-orphan-branch approach). Not yet run for real in CI — see "What's left."
-- Frontend built and verified in a live preview: renders the table, status badges, search, filter tabs, loading/error/stale states all work.
-- **Ran the scraper for real** against the live site (credentials the user provided directly for this purpose) and confirmed:
+- Scraper refactored from the user's original working reference script: reads `TRACK_USERNAME`/`TRACK_PASSWORD` from env vars (never hardcoded, loaded locally via `python-dotenv` from `scraper/.env` which is gitignored; in CI these come from GitHub Actions secrets), uses `page.expect_response` instead of a fixed sleep, captures the **full raw record** for every truck (not just a stopped/idle summary like the original), and fails loudly (non-zero exit, no file written) rather than overwriting good data with a broken scrape.
+- GitHub Actions workflow **deployed and verified for real** — manual `workflow_dispatch` runs succeed end-to-end (login, scrape, force-push to `data` branch), confirmed twice. The `*/5 * * * *` cron is registered and `active` per `gh workflow list`, but as of this writing it had not yet fired on its own schedule (only manual runs so far) — worth checking `gh run list --workflow=scrape.yml` again after some time has passed; GitHub can take a while to start firing a brand-new schedule.
+- Frontend built, deployed, and verified live against real data.
+- **Ran the scraper for real** against the live site and confirmed:
   - It successfully logs in and captures data for **34 trucks**.
-  - The `st` field only ever takes **4 values**: `s` (Stopped), `i` (Engine Idle), `m` (Moving), `off` (Offline). There is no separate "waiting/loading/unloading" status in the API — that was part of the original ask but the tracking system just doesn't expose it. `frontend/src/lib/statusMap.ts` has been updated to reflect these confirmed values (this is no longer a placeholder/guess).
+  - The `st` field only ever takes **4 values**: `s` (Stopped), `i` (Engine Idle), `m` (Moving), `off` (Offline). There is no separate "waiting/loading/unloading" status in the API — that was part of the original ask but the tracking system just doesn't expose it. `frontend/src/lib/statusMap.ts` reflects these confirmed values.
   - Each truck's raw record includes GPS lat/lng, a speed value, heading, and various device-specific I/O fields (varies by tracker hardware model — some trackers report dozens of `ioNN` fields, others very few). All of this is preserved in `latest.json` even though the dashboard only surfaces a subset today.
-  - Of the 34 tracker IDs returned, only **15 have names** in `scraper/truck_mapping.json` (carried over from the user's original script). The other **19 show up as "Unmapped"** in the dashboard, e.g.: `352312095262252`, `352312095376870`, `352312095573443`, `357544371789674`, `357544371801909`, `357544372361242`, `359633103779760`, `862292052354198`, `862292056088982`, `862292056488364`, `862292057086829`, `862292057123630`, `866330050062193`, `866330050084668`, `868003034873450`, `868003034875067`, `868720061954438`, `868720064038247`. The site's raw API response does **not** include a name/label field itself — names have to come from the user identifying which tracker_id is which truck and adding it to `truck_mapping.json` by hand.
+- **`scraper/truck_mapping.json` is now complete and verified for all 34 tracker IDs.** The raw scrape API never includes a name field, but the site's own dashboard HTML has a hidden object-list grid (`side_panel_objects_object_list_grid`) whose row `id` is the tracker_id and whose `<div class="name">` is the vehicle name — this is the authoritative source. When checked against it, **13 of the original 15 hand-entered mappings turned out to be wrong** (only `JV-8750`/`352312095578665` and `JU-5350`/`866551038119579` were correct) — those were carried over from the user's original reference script and never verified against the live site. All 34 are now correct as of 2026-07-11.
+- **Deployed for real:**
+  - GitHub repo: `UmairAmir/fleet-dashboard` (public), pushed via `gh repo create --source=. --remote=origin --push`.
+  - `TRACK_USERNAME`/`TRACK_PASSWORD` set as repo secrets via `gh secret set` (piped from local `.env`, never printed/logged).
+  - Frontend deployed to Vercel, linked to the GitHub repo via `vercel git connect` for auto-deploy on every push to `main`. Since the repo is a monorepo (frontend/ is a subfolder, scraper/ lives alongside it), a root-level `vercel.json` tells Vercel to `npm install/build --prefix frontend` with `frontend/dist` as the output — this was necessary because Vercel's git-triggered builds default to the repo root.
+  - Production env var `VITE_DATA_URL` set on Vercel to `https://raw.githubusercontent.com/UmairAmir/fleet-dashboard/data/latest.json`.
+  - Live URL: https://fleet-dashboard-pink-omega.vercel.app
+  - Security-checked: credentials never appear in git history, CI logs, the public `data` branch, or the deployed JS bundle.
 
-## What's left (all on the user's end — see also the chat message that came with this file)
+## What's left
 
-1. Create the GitHub repo and push this code (nothing has been pushed anywhere yet — everything so far is local, staged with `git add -A` but not committed).
-2. Add `TRACK_USERNAME`/`TRACK_PASSWORD` as GitHub Actions repo secrets.
-3. Manually trigger the workflow once (`workflow_dispatch`) to confirm the real CI path works end-to-end (local run was verified; the GitHub Actions environment itself has not been).
-4. Deploy `frontend/` to Vercel or Netlify with `VITE_DATA_URL` pointing at the `data` branch's raw JSON.
-5. Extend `scraper/truck_mapping.json` with names for the 19 unmapped tracker IDs above, if desired.
-6. Decide if/how to handle the "no loading/unloading status exists" gap (geofencing is the likely path if this is wanted — not started).
+1. Confirm the `*/5 * * * *` cron has started firing on its own (see note above) — if it still hasn't after a few hours, something may be wrong with GitHub's scheduling for this repo and is worth investigating further (re-check `gh workflow list` / `gh run list`).
+2. Decide if/how to handle the "no loading/unloading status exists" gap (geofencing is the likely path if this is wanted — not started).
+3. Delete the stray empty Vercel project named `frontend` (created accidentally before the properly-named `fleet-dashboard` project was linked) — harmless if left alone.
 
 ## Known constraints / things to keep in mind
 
 - The `data` branch is force-pushed on every run — never treat it as a place to store anything else or expect history there.
-- `scraper/truck_mapping.json` is explicitly a partial/manual mapping, not authoritative — don't assume every tracker_id in a scrape will have a name.
+- `scraper/truck_mapping.json` is a manual mapping kept in sync with the site's own hidden object-list grid, not the scrape API (which never includes names). It's complete as of 2026-07-11, but if new trackers get added on the site's end they'll show up as "Unmapped" until someone re-checks the live DOM and adds them here.
 - Raw per-truck records vary in shape by tracker hardware (`p` field, e.g. `teltonikafm`, `concoxgt06`, `jimi`, `concoxgt100`) — the set of `io*` keys differs between them. Don't assume a fixed schema beyond the common fields (`st`, `ststr`, `tracker_id`, `name`, and the `d` array of `[reported_at, gps_at, lat, lng, speed, heading, satellites, extra_io_object]`).
