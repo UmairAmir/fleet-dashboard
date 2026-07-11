@@ -58,6 +58,7 @@ jobs:
           git init -q
           git checkout -q -b data
           cp "$OUTPUT_FILE" latest.json
-          git add latest.json
+          echo '{"ignoreCommand": "exit 0"}' > vercel.json
+          git add latest.json vercel.json
           git commit -q -m "Update fleet snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data:data
