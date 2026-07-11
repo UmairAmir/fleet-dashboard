@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+out/
+scraper/latest.json
+.DS_Store
+scraper/.env
+scraper/tempCodeRunnerFile.py
