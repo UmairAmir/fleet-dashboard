@@ -26,3 +26,4 @@ dist-ssr
 
 # local dev copy of scraper output, not part of the deployed site
 public/latest.json
+.vercel
