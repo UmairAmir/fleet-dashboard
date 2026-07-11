@@ -84,7 +84,6 @@ Rigor/
 ## What's left
 
 1. Decide if/how to handle the "no loading/unloading status exists" gap (geofencing is the likely path if this is wanted — not started).
-2. Delete the stray empty Vercel project named `frontend` (created accidentally before the properly-named `fleet-dashboard` project was linked) — harmless if left alone, purely cosmetic cleanup at vercel.com/umairamir1s-projects.
 
 ## Known constraints / things to keep in mind
 
@@ -93,3 +92,4 @@ Rigor/
 - Raw per-truck records vary in shape by tracker hardware (`p` field, e.g. `teltonikafm`, `concoxgt06`, `jimi`, `concoxgt100`) — the set of `io*` keys differs between them. Don't assume a fixed schema beyond the common fields (`st`, `ststr`, `tracker_id`, `name`, `address`, and the `d` array of `[reported_at, gps_at, lat, lng, speed, heading, satellites, extra_io_object]`).
 - `tools/gc_post.php` (reverse geocoding) is an undocumented internal endpoint of the tracking site, not a public API — it happens to work reliably and fast (34 calls in ~1-2s in the same session) but there's no SLA on it. If it starts failing/rate-limiting, trucks will just show `address: null` rather than breaking the scrape.
 - Both `frontend/.env` and `scraper/.env` are gitignored and local-only — re-create them (see README) when setting up a fresh clone.
+- **The `*/5 * * * *` cron does not reliably fire every 5 minutes.** Confirmed via `gh run list`: in a 33-minute window only **one** `schedule`-triggered run occurred (22:39:17Z); everything else in that window was manual `workflow_dispatch`. This is a known GitHub Actions limitation, not a bug in the workflow — GitHub explicitly documents that scheduled workflows are best-effort and "can be delayed during periods of high load," especially for sub-hourly schedules. So "Last scraped" on the dashboard can legitimately show more than 5 min old; there's no free fix that doesn't reintroduce an always-on server (which defeats the point of this architecture). Treat drift up to roughly 10-15 min as expected, not a regression.

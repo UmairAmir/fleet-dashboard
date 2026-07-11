@@ -57,7 +57,7 @@ export function FleetTable({ trucks }: { trucks: TruckRecord[] }) {
                   <td className="px-4 py-3 text-gray-300">
                     {truck.ststr ?? "—"}
                   </td>
-                  <td className="max-w-xs truncate px-4 py-3 text-gray-300" title={truck.address ?? undefined}>
+                  <td className="max-w-xs whitespace-normal break-words px-4 py-3 text-gray-300">
                     {truck.address ?? "—"}
                   </td>
                 </tr>
