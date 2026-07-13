@@ -18,8 +18,9 @@ So instead, this is fully serverless:
 - **GitHub Actions** runs the scrape on a cron schedule (no server to keep alive, ever).
 - The GitHub repo is **public**, which gives **unlimited** free Actions minutes. (Private repos only get ~2,000 min/month free — not enough for a 5-minute cron, which is ~8,600 runs/month.)
 - **No database.** Data is small (a few dozen trucks), so each run force-pushes the result to a dedicated orphan `data` git branch as `latest.json`, overwriting a single commit every time. `main` (the code) never accumulates scrape history/noise.
-- The data being publicly readable was explicitly confirmed OK with the user — so the **frontend fetches `latest.json` directly from `raw.githubusercontent.com`**, no backend API needed at all. Verified: `raw.githubusercontent.com` returns `access-control-allow-origin: *` (browser fetch works cross-origin) and `cache-control: max-age=300` (5 min, matching the scrape cadence).
+- The data being publicly readable was explicitly confirmed OK with the user — so the **frontend fetches `latest.json` directly from `raw.githubusercontent.com`**, no backend API needed for reads. Verified: `raw.githubusercontent.com` returns `access-control-allow-origin: *` (browser fetch works cross-origin) and `cache-control: max-age=300` (5 min, matching the scrape cadence).
 - **Frontend:** React + Vite + Tailwind, deployed free on Vercel, auto-deploying on every push to `main` via `vercel git connect`.
+- **One exception to "no backend":** a single Vercel serverless function (`api/trigger-scrape.js`) lets the dashboard's "Force scrape now" button kick off the GitHub Actions workflow on demand. This needed a real (if tiny) backend because triggering `workflow_dispatch` requires a GitHub token, which can never be shipped to the public frontend bundle. Still free (Vercel Functions free tier) and still nothing to maintain — it's just a request/response function, not a running process.
 
 Full architecture writeup and rationale: see `README.md`. The original planning conversation (including alternatives that were considered and rejected — e.g. Supabase, Flask+APScheduler, committing to `main` directly) is not preserved anywhere else, so if this architecture ever needs revisiting, that reasoning above is the condensed version of it.
 
@@ -30,6 +31,8 @@ Rigor/
 ├── README.md                       # setup/deploy instructions
 ├── CLAUDE.md                       # this file
 ├── vercel.json                     # monorepo build config for Vercel (see "Deployment" below)
+├── api/
+│   └── trigger-scrape.js           # Vercel serverless function: POST triggers scrape.yml via workflow_dispatch
 ├── .github/workflows/scrape.yml    # cron: */5 * * * *, scrapes + force-pushes to `data` branch
 ├── scraper/
 │   ├── scrape.py                   # Playwright login + capture + reverse-geocode script
@@ -42,8 +45,9 @@ Rigor/
     └── src/
         ├── App.tsx                 # main dashboard: search, status filter tabs, sorts by BUCKET_ORDER
         ├── components/
-        │   ├── FleetTable.tsx      # table (Truck/Tracker ID/Status/Raw status/Location) w/ click-to-expand raw JSON
-        │   └── StatusBadge.tsx
+        │   ├── FleetTable.tsx      # table (Truck/Status/Raw status/Location) w/ click-to-expand raw JSON
+        │   ├── StatusBadge.tsx
+        │   └── TriggerScrapeButton.tsx  # "Force scrape now" button, calls /api/trigger-scrape
         ├── hooks/useFleetData.ts   # fetches VITE_DATA_URL, polls every 60s
         ├── lib/
         │   ├── statusMap.ts        # st code -> {label, color, bucket}; exports BUCKET_ORDER for sorting
@@ -65,8 +69,10 @@ Rigor/
 
 **Frontend:**
 - Search, status filter tabs, loading/error/stale-data states.
-- **Location column** showing the reverse-geocoded address.
+- **Location column** showing the reverse-geocoded address (wraps instead of truncating).
 - **Always sorted** by status priority: Stopped → Engine Idle → Moving → Offline (`BUCKET_ORDER` in `statusMap.ts`, applied to both the table rows and the filter-tab order in `App.tsx`).
+- **Mobile responsive:** header/search/filters reflow on narrow viewports; the table sits in its own horizontally-scrollable container instead of being clipped.
+- **"Force scrape now" button** (`TriggerScrapeButton.tsx`) — calls `POST /api/trigger-scrape`, which dispatches `scrape.yml` via the GitHub Actions API. Server-side guardrails since the button is public and unauthenticated: refuses (HTTP 429) if `latest.json`'s `fetched_at` is under 2 minutes old, or if a run is already queued/in-progress on GitHub's side.
 
 **GitHub Actions workflow** (`.github/workflows/scrape.yml`) — deployed and verified for real:
 - Multiple manual (`workflow_dispatch`) runs succeeded end-to-end (login, scrape, geocode, force-push to `data` branch).
@@ -92,4 +98,5 @@ Rigor/
 - Raw per-truck records vary in shape by tracker hardware (`p` field, e.g. `teltonikafm`, `concoxgt06`, `jimi`, `concoxgt100`) — the set of `io*` keys differs between them. Don't assume a fixed schema beyond the common fields (`st`, `ststr`, `tracker_id`, `name`, `address`, and the `d` array of `[reported_at, gps_at, lat, lng, speed, heading, satellites, extra_io_object]`).
 - `tools/gc_post.php` (reverse geocoding) is an undocumented internal endpoint of the tracking site, not a public API — it happens to work reliably and fast (34 calls in ~1-2s in the same session) but there's no SLA on it. If it starts failing/rate-limiting, trucks will just show `address: null` rather than breaking the scrape.
 - Both `frontend/.env` and `scraper/.env` are gitignored and local-only — re-create them (see README) when setting up a fresh clone.
+- **`GH_ACTIONS_TOKEN`** (Vercel env var, all environments, server-side only — never `VITE_`-prefixed so it's never bundled into client JS) is a **fine-grained GitHub PAT scoped to only the `fleet-dashboard` repo, with just "Actions: Read and write" permission** — deliberately narrower than the `gh` CLI's own OAuth token (which has `repo`+`workflow` across the whole account) since this one backs a publicly-triggerable button. Used only by `api/trigger-scrape.js`. If it's ever rotated or revoked, the "Force scrape now" button will fail with a 500 until a new one is set via `vercel env add GH_ACTIONS_TOKEN`.
 - **The `*/5 * * * *` cron does not reliably fire every 5 minutes.** Confirmed via `gh run list`: in a 33-minute window only **one** `schedule`-triggered run occurred (22:39:17Z); everything else in that window was manual `workflow_dispatch`. This is a known GitHub Actions limitation, not a bug in the workflow — GitHub explicitly documents that scheduled workflows are best-effort and "can be delayed during periods of high load," especially for sub-hourly schedules. So "Last scraped" on the dashboard can legitimately show more than 5 min old; there's no free fix that doesn't reintroduce an always-on server (which defeats the point of this architecture). Treat drift up to roughly 10-15 min as expected, not a regression.

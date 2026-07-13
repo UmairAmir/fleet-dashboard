@@ -7,3 +7,5 @@ scraper/latest.json
 .DS_Store
 scraper/.env
 scraper/tempCodeRunnerFile.py
+.vercel
+.env*

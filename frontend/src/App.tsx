@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useFleetData } from "./hooks/useFleetData";
 import { FleetTable } from "./components/FleetTable";
+import { TriggerScrapeButton } from "./components/TriggerScrapeButton";
 import { getStatusInfo, BUCKET_ORDER } from "./lib/statusMap";
 import { formatRelativeTime, minutesSince } from "./lib/time";
 
@@ -47,16 +48,19 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
-        <header className="mb-8 flex flex-wrap items-baseline justify-between gap-2">
+        <header className="mb-8 flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">Fleet Dashboard</h1>
-          {snapshot && (
-            <p className="text-sm text-gray-400">
-              Last scraped {formatRelativeTime(snapshot.fetched_at)}
-              {lastCheckedAt && (
-                <span className="text-gray-600"> · checked {formatRelativeTime(lastCheckedAt.toISOString())}</span>
-              )}
-            </p>
-          )}
+          <div className="flex flex-col items-end gap-2">
+            {snapshot && (
+              <p className="text-sm text-gray-400">
+                Last scraped {formatRelativeTime(snapshot.fetched_at)}
+                {lastCheckedAt && (
+                  <span className="text-gray-600"> · checked {formatRelativeTime(lastCheckedAt.toISOString())}</span>
+                )}
+              </p>
+            )}
+            <TriggerScrapeButton />
+          </div>
         </header>
 
         {isStale && (
