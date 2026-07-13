@@ -23,12 +23,11 @@ export function FleetTable({ trucks }: { trucks: TruckRecord[] }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-white/10">
-      <table className="w-full text-left text-sm">
+    <div className="overflow-x-auto rounded-lg border border-white/10">
+      <table className="w-full min-w-[640px] text-left text-sm">
         <thead className="bg-white/5 text-xs uppercase tracking-wide text-gray-400">
           <tr>
             <th className="px-4 py-3 font-medium">Truck</th>
-            <th className="px-4 py-3 font-medium">Tracker ID</th>
             <th className="px-4 py-3 font-medium">Status</th>
             <th className="px-4 py-3 font-medium">Raw status text</th>
             <th className="px-4 py-3 font-medium">Location</th>
@@ -43,18 +42,15 @@ export function FleetTable({ trucks }: { trucks: TruckRecord[] }) {
                   onClick={() => toggle(truck.tracker_id)}
                   className="cursor-pointer hover:bg-white/5"
                 >
-                  <td className="px-4 py-3 font-medium text-gray-100">
+                  <td className="whitespace-nowrap px-4 py-3 font-medium text-gray-100">
                     {truck.name ?? (
                       <span className="text-gray-500">Unmapped</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-400">
-                    {truck.tracker_id}
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3">
                     <StatusBadge truck={truck} />
                   </td>
-                  <td className="px-4 py-3 text-gray-300">
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-300">
                     {truck.ststr ?? "—"}
                   </td>
                   <td className="max-w-xs whitespace-normal break-words px-4 py-3 text-gray-300">
@@ -63,7 +59,7 @@ export function FleetTable({ trucks }: { trucks: TruckRecord[] }) {
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan={5} className="bg-black/20 px-4 py-3">
+                    <td colSpan={4} className="bg-black/20 px-4 py-3">
                       <pre className="max-w-full overflow-x-auto text-xs text-gray-400">
                         {JSON.stringify(truck, null, 2)}
                       </pre>

@@ -46,7 +46,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
         <header className="mb-8 flex flex-wrap items-baseline justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">Fleet Dashboard</h1>
           {snapshot && (
@@ -83,7 +83,7 @@ function App() {
                 placeholder="Search by truck name or tracker ID…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-64 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm placeholder:text-gray-500 focus:border-white/20 focus:outline-none"
+                className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm placeholder:text-gray-500 focus:border-white/20 focus:outline-none sm:w-64"
               />
               <div className="flex flex-wrap gap-1.5">
                 <FilterButton active={bucket === "all"} onClick={() => setBucket("all")}>
