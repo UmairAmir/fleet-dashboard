@@ -3,7 +3,7 @@ import { useFleetData } from "./hooks/useFleetData";
 import { FleetTable } from "./components/FleetTable";
 import { TriggerScrapeButton } from "./components/TriggerScrapeButton";
 import { getStatusInfo, BUCKET_ORDER } from "./lib/statusMap";
-import { formatRelativeTime, minutesSince } from "./lib/time";
+import { formatRelativeTime, minutesSince, parseDurationSeconds } from "./lib/time";
 
 const STALE_THRESHOLD_MINUTES = 15;
 
@@ -36,11 +36,12 @@ function App() {
           truck.tracker_id.toLowerCase().includes(term)
         );
       })
-      .sort(
-        (a, b) =>
-          BUCKET_ORDER.indexOf(getStatusInfo(a).bucket) -
-          BUCKET_ORDER.indexOf(getStatusInfo(b).bucket),
-      );
+      .sort((a, b) => {
+        const bucketDiff =
+          BUCKET_ORDER.indexOf(getStatusInfo(a).bucket) - BUCKET_ORDER.indexOf(getStatusInfo(b).bucket);
+        if (bucketDiff !== 0) return bucketDiff;
+        return parseDurationSeconds(b.ststr) - parseDurationSeconds(a.ststr);
+      });
   }, [trucks, search, bucket]);
 
   const isStale = snapshot ? minutesSince(snapshot.fetched_at) > STALE_THRESHOLD_MINUTES : false;

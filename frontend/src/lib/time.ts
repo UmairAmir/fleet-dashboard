@@ -12,3 +12,21 @@ export function formatRelativeTime(iso: string): string {
 export function minutesSince(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 60_000;
 }
+
+const DURATION_UNIT_SECONDS: Record<string, number> = {
+  d: 86400,
+  h: 3600,
+  min: 60,
+  s: 1,
+};
+
+// Parses durations like "Stopped 1 h 9 min 54 s" or "Offline 34 d 12 h 45 min 20 s"
+// (the `ststr` raw status text) into total seconds, for sorting by duration.
+export function parseDurationSeconds(text?: string | null): number {
+  if (!text) return 0;
+  let total = 0;
+  for (const [, value, unit] of text.matchAll(/(\d+)\s*(d|h|min|s)\b/g)) {
+    total += Number(value) * DURATION_UNIT_SECONDS[unit];
+  }
+  return total;
+}
