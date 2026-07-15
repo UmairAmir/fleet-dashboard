@@ -1,48 +1,64 @@
 import { useMemo, useState } from "react";
+import type { TruckRecord } from "./types";
 import { useFleetData } from "./hooks/useFleetData";
 import { FleetTable } from "./components/FleetTable";
 import { TriggerScrapeButton } from "./components/TriggerScrapeButton";
 import { getStatusInfo, BUCKET_ORDER } from "./lib/statusMap";
 import { formatRelativeTime, minutesSince, parseDurationSeconds } from "./lib/time";
+import { matchesCity } from "./lib/geography";
 
 const STALE_THRESHOLD_MINUTES = 15;
+const LONG_DURATION_SECONDS = 3600;
+
+type Tab = "all" | "long" | "operations";
+
+function sortByStatusThenDuration(trucks: TruckRecord[]): TruckRecord[] {
+  return [...trucks].sort((a, b) => {
+    const bucketDiff =
+      BUCKET_ORDER.indexOf(getStatusInfo(a).bucket) - BUCKET_ORDER.indexOf(getStatusInfo(b).bucket);
+    if (bucketDiff !== 0) return bucketDiff;
+    return parseDurationSeconds(b.ststr) - parseDurationSeconds(a.ststr);
+  });
+}
+
+function sortByDuration(trucks: TruckRecord[]): TruckRecord[] {
+  return [...trucks].sort((a, b) => parseDurationSeconds(b.ststr) - parseDurationSeconds(a.ststr));
+}
 
 function App() {
   const { snapshot, error, loading, lastCheckedAt } = useFleetData();
   const [search, setSearch] = useState("");
-  const [bucket, setBucket] = useState<string>("all");
+  const [tab, setTab] = useState<Tab>("all");
 
   const trucks = snapshot?.trucks ?? [];
 
-  const buckets = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const truck of trucks) {
-      const info = getStatusInfo(truck);
-      seen.set(info.bucket, info.label);
-    }
-    return Array.from(seen.entries()).sort(
-      (a, b) => BUCKET_ORDER.indexOf(a[0]) - BUCKET_ORDER.indexOf(b[0]),
-    );
-  }, [trucks]);
-
-  const filteredTrucks = useMemo(() => {
+  const applySearch = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return trucks
-      .filter((truck) => {
-        if (bucket !== "all" && getStatusInfo(truck).bucket !== bucket) return false;
-        if (!term) return true;
-        return (
-          truck.name?.toLowerCase().includes(term) ||
-          truck.tracker_id.toLowerCase().includes(term)
-        );
-      })
-      .sort((a, b) => {
-        const bucketDiff =
-          BUCKET_ORDER.indexOf(getStatusInfo(a).bucket) - BUCKET_ORDER.indexOf(getStatusInfo(b).bucket);
-        if (bucketDiff !== 0) return bucketDiff;
-        return parseDurationSeconds(b.ststr) - parseDurationSeconds(a.ststr);
-      });
-  }, [trucks, search, bucket]);
+    return (list: TruckRecord[]) =>
+      term
+        ? list.filter(
+            (truck) =>
+              truck.name?.toLowerCase().includes(term) || truck.tracker_id.toLowerCase().includes(term),
+          )
+        : list;
+  }, [search]);
+
+  const longStoppedTrucks = useMemo(
+    () =>
+      trucks.filter((truck) => {
+        const bucket = getStatusInfo(truck).bucket;
+        return (bucket === "stopped" || bucket === "idle") && parseDurationSeconds(truck.ststr) > LONG_DURATION_SECONDS;
+      }),
+    [trucks],
+  );
+
+  const stoppedTrucks = useMemo(() => trucks.filter((truck) => truck.st === "s"), [trucks]);
+  const karachiTrucks = useMemo(() => stoppedTrucks.filter((t) => matchesCity(t.address, "karachi")), [stoppedTrucks]);
+  const lahoreTrucks = useMemo(() => stoppedTrucks.filter((t) => matchesCity(t.address, "lahore")), [stoppedTrucks]);
+  const otherStoppedTrucks = useMemo(
+    () => stoppedTrucks.filter((t) => !matchesCity(t.address, "karachi") && !matchesCity(t.address, "lahore")),
+    [stoppedTrucks],
+  );
 
   const isStale = snapshot ? minutesSince(snapshot.fetched_at) > STALE_THRESHOLD_MINUTES : false;
 
@@ -91,18 +107,27 @@ function App() {
                 className="w-full rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm placeholder:text-gray-500 focus:border-white/20 focus:outline-none sm:w-64"
               />
               <div className="flex flex-wrap gap-1.5">
-                <FilterButton active={bucket === "all"} onClick={() => setBucket("all")}>
+                <FilterButton active={tab === "all"} onClick={() => setTab("all")}>
                   All ({trucks.length})
                 </FilterButton>
-                {buckets.map(([key, label]) => (
-                  <FilterButton key={key} active={bucket === key} onClick={() => setBucket(key)}>
-                    {label} ({trucks.filter((t) => getStatusInfo(t).bucket === key).length})
-                  </FilterButton>
-                ))}
+                <FilterButton active={tab === "long"} onClick={() => setTab("long")}>
+                  &gt;1 Hour ({longStoppedTrucks.length})
+                </FilterButton>
+                <FilterButton active={tab === "operations"} onClick={() => setTab("operations")}>
+                  Operations ({stoppedTrucks.length})
+                </FilterButton>
               </div>
             </div>
 
-            <FleetTable trucks={filteredTrucks} />
+            {tab === "all" && <FleetTable trucks={sortByStatusThenDuration(applySearch(trucks))} />}
+            {tab === "long" && <FleetTable trucks={sortByStatusThenDuration(applySearch(longStoppedTrucks))} />}
+            {tab === "operations" && (
+              <div className="space-y-6">
+                <CitySection title="Karachi" trucks={sortByDuration(applySearch(karachiTrucks))} />
+                <CitySection title="Lahore" trucks={sortByDuration(applySearch(lahoreTrucks))} />
+                <CitySection title="Other" trucks={sortByDuration(applySearch(otherStoppedTrucks))} />
+              </div>
+            )}
           </>
         )}
       </div>
@@ -130,6 +155,17 @@ function FilterButton({
     >
       {children}
     </button>
+  );
+}
+
+function CitySection({ title, trucks }: { title: string; trucks: TruckRecord[] }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-semibold text-gray-300">
+        {title} <span className="font-normal text-gray-500">({trucks.length})</span>
+      </h2>
+      <FleetTable trucks={trucks} />
+    </section>
   );
 }
 

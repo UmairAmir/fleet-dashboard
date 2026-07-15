@@ -43,7 +43,7 @@ Rigor/
     ├── .env                        # local-only, gitignored: VITE_DATA_URL
     ├── public/latest.json          # local-only, gitignored: dev copy of a scrape snapshot
     └── src/
-        ├── App.tsx                 # main dashboard: search, status filter tabs, sorts by BUCKET_ORDER
+        ├── App.tsx                 # main dashboard: search, All/>1 Hour/Operations tabs, sorts by BUCKET_ORDER
         ├── components/
         │   ├── FleetTable.tsx      # table (Truck/Status/Raw status/Location) w/ click-to-expand raw JSON
         │   ├── StatusBadge.tsx
@@ -51,7 +51,8 @@ Rigor/
         ├── hooks/useFleetData.ts   # fetches VITE_DATA_URL, polls every 60s
         ├── lib/
         │   ├── statusMap.ts        # st code -> {label, color, bucket}; exports BUCKET_ORDER for sorting
-        │   └── time.ts             # relative time formatting
+        │   ├── time.ts             # relative time formatting + ststr duration parsing
+        │   └── geography.ts        # matchesCity() heuristic for the Operations tab (see below)
         └── types.ts
 ```
 
@@ -72,6 +73,7 @@ Rigor/
 - **Location column** showing the reverse-geocoded address (wraps instead of truncating).
 - **Always sorted** by status priority: Stopped → Engine Idle → Moving → Offline (`BUCKET_ORDER` in `statusMap.ts`, applied to both the table rows and the filter-tab order in `App.tsx`).
 - **Mobile responsive:** header/search/filters reflow on narrow viewports; the table sits in its own horizontally-scrollable container instead of being clipped.
+- **Three tabs** (replaced the old per-status tabs): **All**, **`>1 Hour`** (Stopped/Idle trucks whose `ststr` duration exceeds 3600s — Moving/Offline never qualify regardless of duration), and **Operations** (Stopped trucks only, grouped into Karachi / Lahore / Other sections by matching the free-text `address` field — see `matchesCity()` in `lib/geography.ts`). Search still applies within any tab.
 - **"Force scrape now" button** (`TriggerScrapeButton.tsx`) — calls `POST /api/trigger-scrape`, which dispatches `scrape.yml` via the GitHub Actions API. Server-side guardrails since the button is public and unauthenticated: refuses (HTTP 429) if `latest.json`'s `fetched_at` is under 2 minutes old, or if a run is already queued/in-progress on GitHub's side.
 
 **GitHub Actions workflow** (`.github/workflows/scrape.yml`) — deployed and verified for real:
@@ -98,5 +100,6 @@ Rigor/
 - Raw per-truck records vary in shape by tracker hardware (`p` field, e.g. `teltonikafm`, `concoxgt06`, `jimi`, `concoxgt100`) — the set of `io*` keys differs between them. Don't assume a fixed schema beyond the common fields (`st`, `ststr`, `tracker_id`, `name`, `address`, and the `d` array of `[reported_at, gps_at, lat, lng, speed, heading, satellites, extra_io_object]`).
 - `tools/gc_post.php` (reverse geocoding) is an undocumented internal endpoint of the tracking site, not a public API — it happens to work reliably and fast (34 calls in ~1-2s in the same session) but there's no SLA on it. If it starts failing/rate-limiting, trucks will just show `address: null` rather than breaking the scrape.
 - Both `frontend/.env` and `scraper/.env` are gitignored and local-only — re-create them (see README) when setting up a fresh clone.
+- **City detection for the Operations tab is a heuristic on free-text addresses, not a structured field** — checked real data and found Karachi-area addresses sometimes come back **in Urdu script** (e.g. `"کراچی - حیدرآباد موٹروے"` for the Karachi-Hyderabad Motorway) rather than the English word, and Lahore-area addresses use the **"LHR" abbreviation** rather than ever spelling out "Lahore". `matchesCity()` in `frontend/src/lib/geography.ts` matches both English and these known variants per city. If new address formats show up that don't match (e.g. other abbreviations or scripts), affected trucks will silently fall into the "Other" group rather than erroring — worth spot-checking `lib/geography.ts`'s patterns periodically against real `address` values.
 - **`GH_ACTIONS_TOKEN`** (Vercel env var, all environments, server-side only — never `VITE_`-prefixed so it's never bundled into client JS) is a **fine-grained GitHub PAT scoped to only the `fleet-dashboard` repo, with just "Actions: Read and write" permission** — deliberately narrower than the `gh` CLI's own OAuth token (which has `repo`+`workflow` across the whole account) since this one backs a publicly-triggerable button. Used only by `api/trigger-scrape.js`. If it's ever rotated or revoked, the "Force scrape now" button will fail with a 500 until a new one is set via `vercel env add GH_ACTIONS_TOKEN`.
 - **The `*/5 * * * *` cron does not reliably fire every 5 minutes.** Confirmed via `gh run list`: in a 33-minute window only **one** `schedule`-triggered run occurred (22:39:17Z); everything else in that window was manual `workflow_dispatch`. This is a known GitHub Actions limitation, not a bug in the workflow — GitHub explicitly documents that scheduled workflows are best-effort and "can be delayed during periods of high load," especially for sub-hourly schedules. So "Last scraped" on the dashboard can legitimately show more than 5 min old; there's no free fix that doesn't reintroduce an always-on server (which defeats the point of this architecture). Treat drift up to roughly 10-15 min as expected, not a regression.
